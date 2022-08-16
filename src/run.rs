@@ -125,6 +125,11 @@ fn run_impl() -> anyhow::Result<i32> {
         "keep going until at least N failures (0 means infinity) [default=1]",
         "N",
     );
+    opts.optflag(
+        "p",
+        "print-duration",
+        "print how long each task took to execute",
+    );
     opts.optflag("h", "help", "");
     opts.optflag("v", "verbose", "print executed command lines");
     if fake_ninja_compat {
@@ -194,7 +199,11 @@ fn run_impl() -> anyhow::Result<i32> {
         build_filename = name;
     }
 
-    let mut progress = ConsoleProgress::new(matches.opt_present("v"), use_fancy_terminal());
+    let mut progress = ConsoleProgress::new(
+        matches.opt_present("v"),
+        matches.opt_present("p"),
+        use_fancy_terminal(),
+    );
 
     // Build once with regen=true, and if the result says we regenerated the
     // build file, reload and build everything a second time.

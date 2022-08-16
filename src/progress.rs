@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use crate::graph::Build;
 use crate::graph::BuildId;
-use crate::task::TaskResult;
+use crate::task::FinishedTask;
 use crate::task::Termination;
 use crate::work::BuildState;
 use crate::work::StateCounts;
@@ -61,7 +61,8 @@ pub trait Progress {
     fn flush(&mut self);
 
     /// Called when a task starts or completes.
-    fn task_state(&mut self, id: BuildId, build: &Build, result: Option<&TaskResult>);
+    fn task_start(&mut self, id: BuildId, build: &Build);
+    fn task_finish(&mut self, id: BuildId, build: &Build, result: &FinishedTask);
 
     /// Called when the overall build has completed (success or failure), to allow
     /// cleaning up the display.
@@ -92,13 +93,15 @@ pub struct ConsoleProgress {
     tasks: VecDeque<Task>,
     /// Whether to print command lines of completed programs.
     verbose: bool,
+    /// Whether to print the duration of completed build tasks.
+    print_duration: bool,
     /// Whether to print a progress bar and currently running tasks.
     fancy_terminal: bool,
 }
 
 #[allow(clippy::new_without_default)]
 impl ConsoleProgress {
-    pub fn new(verbose: bool, fancy_terminal: bool) -> Self {
+    pub fn new(verbose: bool, print_duration: bool, fancy_terminal: bool) -> Self {
         ConsoleProgress {
             // Act like our last update was now, so that we delay slightly
             // before our first print.  This reduces flicker in the case where
@@ -107,6 +110,7 @@ impl ConsoleProgress {
             counts: StateCounts::new(),
             tasks: VecDeque::new(),
             verbose,
+            print_duration,
             fancy_terminal,
         }
     }
@@ -118,24 +122,22 @@ impl Progress for ConsoleProgress {
         self.maybe_print_progress();
     }
 
-    fn task_state(&mut self, id: BuildId, build: &Build, result: Option<&TaskResult>) {
-        match result {
-            None => {
-                // Task starting.
-                let message = build_message(build);
-                self.tasks.push_back(Task {
-                    id,
-                    start: Instant::now(),
-                    message: message.to_string(),
-                });
-            }
-            Some(result) => {
-                // Task completed.
-                self.tasks
-                    .remove(self.tasks.iter().position(|t| t.id == id).unwrap());
-                self.print_result(build, result);
-            }
-        }
+    fn task_start(&mut self, id: BuildId, build: &Build) {
+        // Task starting.
+        let message = build_message(build);
+        self.tasks.push_back(Task {
+            id,
+            start: Instant::now(),
+            message: message.to_string(),
+        });
+        self.maybe_print_progress();
+    }
+
+    fn task_finish(&mut self, id: BuildId, build: &Build, result: &FinishedTask) {
+        // Task completed.
+        self.tasks
+            .remove(self.tasks.iter().position(|t| t.id == id).unwrap());
+        self.print_result(build, result);
         self.maybe_print_progress();
     }
 
@@ -239,7 +241,7 @@ impl ConsoleProgress {
         self.last_update = now;
     }
 
-    fn print_result(&mut self, build: &Build, result: &TaskResult) {
+    fn print_result(&mut self, build: &Build, task: &FinishedTask) {
         // By default we don't want to print anything when a task completes,
         // but we do want to print the completed task when:
         // - failed tasks
@@ -247,20 +249,25 @@ impl ConsoleProgress {
         // - when we aren't doing fancy terminal progress display
         // - when the task had output (even in non-failing cases)
 
-        if result.termination == Termination::Success
+        if task.result.termination == Termination::Success
             && !self.verbose
+            && !self.print_duration
             && self.fancy_terminal
-            && result.output.is_empty()
+            && task.result.output.is_empty()
         {
             return;
         }
 
         self.clear_progress();
-        let status = match result.termination {
+        let status = match task.result.termination {
             Termination::Success => "",
             Termination::Interrupted => "interrupted: ",
             Termination::Failure => "failed: ",
         };
+        if self.print_duration {
+            let dur = (task.span.1 - task.span.0).as_secs_f32();
+            print!("[{:.3}s] ", dur);
+        }
         let message = if self.verbose {
             build.cmdline.as_ref().unwrap()
         } else {
@@ -268,8 +275,8 @@ impl ConsoleProgress {
         };
         println!("{}{}", status, message);
 
-        if !result.output.is_empty() {
-            std::io::stdout().write_all(&result.output).unwrap();
+        if !task.result.output.is_empty() {
+            std::io::stdout().write_all(&task.result.output).unwrap();
         }
     }
 }

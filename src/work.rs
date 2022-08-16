@@ -663,7 +663,7 @@ impl<'a> Work<'a> {
                     build.depfile.clone(),
                     build.rspfile.clone(),
                 );
-                self.progress.task_state(id, build, None);
+                self.progress.task_start(id, build);
                 made_progress = true;
             }
 
@@ -704,7 +704,7 @@ impl<'a> Work<'a> {
             });
 
             self.progress
-                .task_state(task.buildid, build, Some(&task.result));
+                .task_finish(task.buildid, build, &task);
             match task.result.termination {
                 task::Termination::Failure => {
                     if self.keep_going > 0 {
