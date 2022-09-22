@@ -130,6 +130,11 @@ fn run_impl() -> anyhow::Result<i32> {
         "print-duration",
         "print how long each task took to execute",
     );
+    opts.optflag(
+        "s",
+        "suppress-regen",
+        "prevent regenerating build.ninja",
+    );
     opts.optflag("h", "help", "");
     opts.optflag("v", "verbose", "print executed command lines");
     if fake_ninja_compat {
@@ -210,7 +215,7 @@ fn run_impl() -> anyhow::Result<i32> {
 
     let mut params = BuildParams {
         parallelism,
-        regen: true,
+        regen: !matches.opt_present("s"),
         keep_going,
         target_names: &matches.free,
         build_filename: &build_filename,
